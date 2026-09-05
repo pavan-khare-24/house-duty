@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>House Chores</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #f4f3ef;
+    margin: 0;
+    padding: 20px;
+    color: #2c2c2a;
+  }
+  .wrap { max-width: 480px; margin: 0 auto; }
+  h1 { font-size: 20px; font-weight: 600; text-align: center; margin: 8px 0 4px; }
+  .sub { text-align: center; color: #6f6e68; font-size: 13px; margin-bottom: 20px; }
+  .card { background: #fff; border-radius: 14px; border: 1px solid #e5e3da; padding: 18px; margin-bottom: 16px; }
+  .card-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .icon { font-size: 22px; }
+  .chore-name { font-weight: 600; font-size: 16px; flex: 1; }
+  .turn-box { background: #f6f5f0; border-radius: 10px; padding: 14px; text-align: center; margin-bottom: 12px; }
+  .turn-label { font-size: 12px; color: #8a8880; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px; }
+  .turn-person { font-size: 22px; font-weight: 600; color: #26215c; }
+  .up-next { font-size: 12px; color: #8a8880; margin-top: 4px; }
+  button.done-btn { width: 100%; padding: 12px; border: none; border-radius: 10px; background: #26215c; color: white; font-size: 15px; font-weight: 600; cursor: pointer; }
+  button.done-btn:active { transform: scale(0.98); }
+  button.done-btn:disabled { opacity: 0.6; }
+  .last-done { font-size: 12px; color: #8a8880; text-align: center; margin-top: 8px; }
+  .settings-toggle { text-align: center; font-size: 13px; color: #6f6e68; margin: 16px 0; cursor: pointer; text-decoration: underline; }
+  .settings { background: #fff; border-radius: 14px; border: 1px solid #e5e3da; padding: 16px; display: none; }
+  .settings.open { display: block; }
+  .settings input { width: 100%; padding: 8px 10px; margin-bottom: 8px; border-radius: 8px; border: 1px solid #ddd; font-size: 14px; }
+  .settings-save { width: 100%; padding: 10px; border: none; border-radius: 8px; background: #e5e3da; color: #2c2c2a; font-weight: 600; cursor: pointer; margin-top: 4px; }
+  .status { text-align: center; font-size: 12px; padding: 8px; border-radius: 8px; margin-bottom: 12px; }
+  .status.connecting { background: #fff4d6; color: #7a5a00; }
+  .status.error { background: #fde3e3; color: #a32d2d; }
+  .loading { text-align: center; color: #8a8880; padding: 40px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>House chores</h1>
+  <div class="sub">Tap done when you finish — it passes to the next person</div>
+  <div id="status" class="status connecting">Connecting...</div>
+  <div id="app" class="loading" style="display:none;">Loading...</div>
+</div>
+
+<!--
+  ============================================================
+  SETUP REQUIRED — paste your Firebase config below.
+  See the setup instructions Claude gave you for how to get this.
+  ============================================================
+-->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script>
+const firebaseConfig = {
+  apiKey: "AIzaSyCNS5wKNqPOjKpQ_pxEaOMRFKkouvUQOxY",
+  authDomain: "house-duty-9ed33.firebaseapp.com",
+  databaseURL: "https://house-duty-9ed33-default-rtdb.firebaseio.com",
+  projectId: "house-duty-9ed33",
+  storageBucket: "house-duty-9ed33.firebasestorage.app",
+  messagingSenderId: "144845183896",
+  appId: "1:144845183896:web:d1d9cce86dc3020e4c69ed"
+};
+
+const DEFAULT_NAMES = ['Roommate 1', 'Roommate 2', 'Roommate 3', 'Roommate 4'];
+const CHORES = [
+  { id: 'water', label: 'Water jar refill', icon: '💧' },
+  { id: 'garbage', label: 'Garbage duty', icon: '🗑️' }
+];
+
+let state = null;
+let dbRef = null;
+
+function defaultState() {
+  return {
+    names: DEFAULT_NAMES.slice(),
+    turns: { water: 0, garbage: 0 },
+    lastDone: { water: null, garbage: null }
+  };
+}
+
+function setStatus(mode, text) {
+  const el = document.getElementById('status');
+  if (mode === 'ok') {
+    el.style.display = 'none';
+  } else {
+    el.style.display = 'block';
+    el.className = 'status ' + mode;
+    el.textContent = text;
+  }
+}
+
+function formatDate(iso) {
+  if (!iso) return 'Not logged yet';
+  const d = new Date(iso);
+  const now = new Date();
+  const isToday = d.toDateString() === now.toDateString();
+  const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  if (isToday) return 'Today at ' + time;
+  return d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' at ' + time;
+}
+
+function render() {
+  const app = document.getElementById('app');
+  app.style.display = 'block';
+  app.className = '';
+  app.innerHTML = '';
+
+  CHORES.forEach(chore => {
+    const idx = state.turns[chore.id] % state.names.length;
+    const nextIdx = (idx + 1) % state.names.length;
+    const current = state.names[idx] || 'Unknown';
+    const next = state.names[nextIdx] || 'Unknown';
+
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `
+      <div class="card-head">
+        <span class="icon">${chore.icon}</span>
+        <span class="chore-name">${chore.label}</span>
+      </div>
+      <div class="turn-box">
+        <div class="turn-label">It's this person's turn</div>
+        <div class="turn-person">${current}</div>
+        <div class="up-next">Up next: ${next}</div>
+      </div>
+      <button class="done-btn" data-chore="${chore.id}">Mark done — pass to ${next}</button>
+      <div class="last-done">Last done: ${formatDate(state.lastDone[chore.id])}</div>
+    `;
+    app.appendChild(card);
+  });
+
+  app.querySelectorAll('.done-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const choreId = btn.getAttribute('data-chore');
+      btn.disabled = true;
+      btn.textContent = 'Saving...';
+      const newTurns = { ...state.turns };
+      newTurns[choreId] = (state.turns[choreId] + 1) % state.names.length;
+      const newLastDone = { ...state.lastDone };
+      newLastDone[choreId] = new Date().toISOString();
+      dbRef.update({ turns: newTurns, lastDone: newLastDone })
+        .catch(err => {
+          setStatus('error', "Couldn't save — check your connection and try again");
+          console.error(err);
+        });
+    });
+  });
+
+  const toggle = document.createElement('div');
+  toggle.className = 'settings-toggle';
+  toggle.textContent = 'Edit roommate names';
+  app.appendChild(toggle);
+
+  const settingsBox = document.createElement('div');
+  settingsBox.className = 'settings';
+  settingsBox.innerHTML = state.names.map((n, i) =>
+    `<input type="text" data-idx="${i}" value="${n.replace(/"/g, '&quot;')}" placeholder="Roommate ${i + 1} name">`
+  ).join('') + '<button class="settings-save">Save names</button>';
+  app.appendChild(settingsBox);
+
+  toggle.addEventListener('click', () => settingsBox.classList.toggle('open'));
+
+  settingsBox.querySelector('.settings-save').addEventListener('click', () => {
+    const inputs = settingsBox.querySelectorAll('input');
+    const newNames = Array.from(inputs).map(i => i.value.trim()).filter(Boolean);
+    if (newNames.length < 2) {
+      alert('Add at least 2 names');
+      return;
+    }
+    const newTurns = { ...state.turns };
+    CHORES.forEach(c => { newTurns[c.id] = newTurns[c.id] % newNames.length; });
+    dbRef.update({ names: newNames, turns: newTurns }).catch(err => {
+      setStatus('error', "Couldn't save — check your connection and try again");
+      console.error(err);
+    });
+  });
+}
+
+(function init() {
+  if (firebaseConfig.apiKey.indexOf('PASTE_') === 0) {
+    setStatus('error', 'Setup incomplete: paste your Firebase config into index.html (see setup instructions)');
+    return;
+  }
+
+  try {
+    firebase.initializeApp(firebaseConfig);
+    dbRef = firebase.database().ref('choreState');
+
+    dbRef.once('value', snap => {
+      if (!snap.exists()) {
+        dbRef.set(defaultState());
+      }
+    });
+
+    dbRef.on('value', snap => {
+      const val = snap.val();
+      if (val) {
+        state = { ...defaultState(), ...val };
+        setStatus('ok', '');
+        render();
+      }
+    }, err => {
+      setStatus('error', 'Connection error: ' + err.message);
+      console.error(err);
+    });
+  } catch (e) {
+    setStatus('error', 'Setup error: ' + e.message);
+    console.error(e);
+  }
+})();
+</script>
+</body>
+</html>

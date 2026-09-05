@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>House Chores</title>
+<title>Room Chores</title>
 <style>
   * { box-sizing: border-box; }
   body {
@@ -66,10 +66,10 @@ const firebaseConfig = {
   appId: "1:144845183896:web:d1d9cce86dc3020e4c69ed"
 };
 
-const DEFAULT_NAMES = ['Roommate 1', 'Roommate 2', 'Roommate 3', 'Roommate 4'];
+const DEFAULT_NAMES = ['Pavan Khare', 'Dinesh Kavade', 'Devendra Khare', 'Akshay Mhaske'];
 const CHORES = [
-  { id: 'water', label: 'Water jar refill', icon: '💧' },
-  { id: 'garbage', label: 'Garbage duty', icon: '🗑️' }
+  { id: 'water', label: 'Water Jar Refill', icon: '💧' },
+  { id: 'garbage', label: 'Garbage Duty', icon: '🗑️' }
 ];
 
 let state = null;
@@ -124,7 +124,7 @@ function render() {
         <span class="chore-name">${chore.label}</span>
       </div>
       <div class="turn-box">
-        <div class="turn-label">It's this person's turn</div>
+        <div class="turn-label">It's your turn</div>
         <div class="turn-person">${current}</div>
         <div class="up-next">Up next: ${next}</div>
       </div>
